@@ -1,120 +1,105 @@
-import {create as createIpfsNode, IPFS} from 'ipfs-core';
-import path from 'path';
-import { config } from 'dotenv';
-import fs from 'fs';
-import { PrivateKey, PublicKey, readKey, readPrivateKey, createMessage, encrypt } from 'openpgp';
-import crypto from 'crypto';
-
-config();
-
-type FileBackup = {
-	path: string,
-	ipfsHash: string,
-	fileHash: string,
-}
-type State = {
-	fileBackups: FileBackup[]
-}
+import { CID, create as createIpfsNode, IPFS } from "ipfs-core";
+import path from "path";
+import fs from "fs";
+import { PrivateKey, PublicKey, readKey, readPrivateKey, createMessage, encrypt } from "openpgp";
+import crypto from "crypto";
+import { fetchFileBackups, updateFileBackups } from "./private-api";
+import { photoFolderPath } from "./const";
 
 type Context = {
-	publicKey: PublicKey,
-	privateKey: PrivateKey,
-	ipfs: IPFS,
-}
+	publicKey: PublicKey;
+	privateKey: PrivateKey;
+	ipfs: IPFS;
+};
+const ipfsPath = path.resolve(process.cwd(), "data/ipfs");
 
-const statePath = path.resolve(process.cwd(), 'data/state.json');
-const ipfsPath = path.resolve(process.cwd(), 'data/ipfs');
-
-async function readState(){
-	try {
-		const raw = await fs.promises.readFile(statePath, {encoding: 'utf-8'});
-		return JSON.parse(raw) as State;
+async function main() {
+	if (!process.env.PRIVATE_KEY_PATH) {
+		throw new Error("PRIVATE_KEY_PATH must be set");
 	}
-	catch(e){
-		console.error('Failed to read state');
-		return {
-			fileBackups: []
-		} as State;
+	if (!process.env.PUBLIC_KEY_PATH) {
+		throw new Error("PUBLIC_KEY_PATH must be set");
 	}
-}
-
-async function writeState(state: State){
-	await fs.promises.writeFile(statePath, JSON.stringify(state, null, 2), {encoding: 'utf-8'})
-}
-
-async function main(){
-	if(!process.env.PRIVATE_KEY_PATH){
-		throw new Error('PRIVATE_KEY_PATH must be set');
-	}
-	if(!process.env.PUBLIC_KEY_PATH){
-		throw new Error('PUBLIC_KEY_PATH must be set');
-	}
-	const armoredPrivateKey = await fs.promises.readFile(process.env.PRIVATE_KEY_PATH, {encoding: 'utf-8'});
-	const armoredPublicKey = await fs.promises.readFile(process.env.PRIVATE_KEY_PATH, {encoding: 'utf-8'});
-	const publicKey = await readKey({armoredKey: armoredPublicKey});
-	const privateKey = await readPrivateKey({armoredKey: armoredPrivateKey});
+	const armoredPrivateKey = await fs.promises.readFile(process.env.PRIVATE_KEY_PATH, { encoding: "utf-8" });
+	const armoredPublicKey = await fs.promises.readFile(process.env.PRIVATE_KEY_PATH, { encoding: "utf-8" });
+	const publicKey = await readKey({ armoredKey: armoredPublicKey });
+	const privateKey = await readPrivateKey({ armoredKey: armoredPrivateKey });
 
 	const ipfs = await createIpfsNode({
 		repo: ipfsPath,
 	});
 
-	const context:Context = {ipfs, publicKey, privateKey};
+	process.on("SIGINT", () => {
+		console.info("stopping ipfs");
+		ipfs.stop();
+		process.exit();
+	});
 
-	setInterval(() => backupFiles(context), 10 * 1000);
+	const context: Context = { ipfs, publicKey, privateKey };
+
+	setTimeout(() => backupFiles(context), 10 * 1000);
 }
 
-function getFileHash(filePath: string, type = 'sha1'): Promise<string>{
+function getFileHash(filePath: string, type = "sha1"): Promise<string> {
 	return new Promise((res, rej) => {
 		const hash = crypto.createHash(type);
-		hash.setEncoding('hex');
+		hash.setEncoding("hex");
 		fs.createReadStream(filePath).pipe(hash);
-		hash.on('finish', () => {
+		hash.on("finish", () => {
 			res(hash.read());
-		})
-	})
+		});
+	});
 }
 
-async function backupFiles({ipfs, publicKey, privateKey}: Context){
-	const state = await readState();
-	if(!process.env.FOLDER_PATH){
-		throw new Error('FOLDER_PATH must be set');
-	}
-	const folderPath = path.resolve(process.env.FOLDER_PATH);
+async function backupFiles({ ipfs, publicKey, privateKey }: Context) {
+	const fileBackups = await fetchFileBackups();
+	let newFileBackups = Array.from(fileBackups);
+
+	const folderPath = path.resolve(photoFolderPath);
 	const files = await fs.promises.readdir(folderPath);
 
-	for(const filename of files){
+	for (const filename of files) {
 		const filePath = path.resolve(folderPath, filename);
 		const stat = await fs.promises.stat(filePath);
 
-		if(!stat.isDirectory()){
+		if (!stat.isDirectory()) {
 			const fileHash = await getFileHash(filePath);
+			const backup = newFileBackups.find((b) => b.path === filename);
 
-			const backup = state.fileBackups.find(b => b.path === filename);
-
-			if(backup && backup.fileHash !== fileHash){
+			if (backup && backup.fileHash !== fileHash) {
 				console.log(`Removing old file ${filePath}, old: ${backup.fileHash} new: ${fileHash}`);
-				state.fileBackups = state.fileBackups.filter(b => b.path !== filePath);
-				// await ipfs.pin.rm(backup.ipfsHash);
+				newFileBackups = newFileBackups.filter((b) => b.fileHash !== backup.fileHash);
+				await ipfs.pin.rm(new CID(backup.ipfsHash));
 			}
 
-			if(!backup || backup.fileHash !== fileHash){
-				const message = await createMessage({filename: filename, binary: fs.createReadStream(filePath)});
-				const encrypted: unknown = await encrypt({message, encryptionKeys: publicKey, signingKeys: privateKey, armor: false});
+			if (!backup || backup.fileHash !== fileHash) {
+				const message = await createMessage({
+					filename,
+					binary: fs.createReadStream(filePath),
+				});
+				const encrypted: unknown = await encrypt({
+					message,
+					encryptionKeys: publicKey,
+					signingKeys: privateKey,
+					armor: false,
+				});
 
 				const { cid } = await ipfs.add(encrypted as ReadableStream<Uint8Array>);
 				await ipfs.pin.add(cid);
 
-				console.log(`added ${filename} to ipfs ${cid.toString()}`)
-				state.fileBackups.push({
+				console.log(`added ${filename} to ipfs ${cid.toString()}`);
+				newFileBackups.push({
 					path: filename,
 					ipfsHash: cid.toString(),
-					fileHash: fileHash
-				})
+					fileHash: fileHash,
+				});
 			}
 		}
 	}
 
-	await writeState(state);
+	await updateFileBackups(newFileBackups);
+
+	setTimeout(() => backupFiles({ ipfs, publicKey, privateKey }), 10 * 1000);
 }
 
 main();

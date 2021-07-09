@@ -1,21 +1,27 @@
 {
-  "name": "ipfs-friends",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "dev": "nodemon --ignore data src/index.ts"
-  },
-  "author": "Robert Friedl",
-  "license": "ISC",
-  "dependencies": {
-    "dotenv": "^10.0.0",
-    "ipfs-core": "^0.8.0",
-    "openpgp": "^5.0.0-3"
-  },
-  "devDependencies": {
-    "nodemon": "^2.0.9",
-    "ts-node": "^10.0.0",
-    "typescript": "^4.3.5"
-  }
+	"name": "ipfs-friends",
+	"version": "1.0.0",
+	"description": "",
+	"main": "index.js",
+	"scripts": {
+		"start": "node dist/index.js",
+		"dev": "ts-node src/index.ts",
+		"format": "prettier -w .",
+		"build": "tsc"
+	},
+	"author": "Robert Friedl",
+	"license": "ISC",
+	"dependencies": {
+		"dotenv": "^10.0.0",
+		"ipfs-core": "^0.8.0",
+		"node-fetch": "^2.6.1",
+		"openpgp": "^5.0.0-3"
+	},
+	"devDependencies": {
+		"@types/node-fetch": "^2.5.11",
+		"nodemon": "^2.0.9",
+		"prettier": "^2.3.2",
+		"ts-node": "^10.0.0",
+		"typescript": "^4.3.5"
+	}
 }
