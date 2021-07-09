@@ -1,57 +1,16 @@
-import { CID, create as createIpfsNode, IPFS } from "ipfs-core";
+import { CID } from "ipfs-core";
 import path from "path";
 import fs from "fs";
-import { PrivateKey, PublicKey, readKey, readPrivateKey, createMessage, encrypt } from "openpgp";
-import crypto from "crypto";
+import { createMessage, encrypt } from "openpgp";
 import { fetchFileBackups, updateFileBackups } from "./private-api";
 import { photoFolderPath } from "./const";
+import { checkVersion } from "./api";
+import { getIpfs, stop } from "./ipfs";
+import { getPrivateKey, getPublicKey } from "./keys";
+import { getFileHash } from "./files";
 
-type Context = {
-	publicKey: PublicKey;
-	privateKey: PrivateKey;
-	ipfs: IPFS;
-};
-const ipfsPath = path.resolve(process.cwd(), "data/ipfs");
-
-async function main() {
-	if (!process.env.PRIVATE_KEY_PATH) {
-		throw new Error("PRIVATE_KEY_PATH must be set");
-	}
-	if (!process.env.PUBLIC_KEY_PATH) {
-		throw new Error("PUBLIC_KEY_PATH must be set");
-	}
-	const armoredPrivateKey = await fs.promises.readFile(process.env.PRIVATE_KEY_PATH, { encoding: "utf-8" });
-	const armoredPublicKey = await fs.promises.readFile(process.env.PRIVATE_KEY_PATH, { encoding: "utf-8" });
-	const publicKey = await readKey({ armoredKey: armoredPublicKey });
-	const privateKey = await readPrivateKey({ armoredKey: armoredPrivateKey });
-
-	const ipfs = await createIpfsNode({
-		repo: ipfsPath,
-	});
-
-	process.on("SIGINT", () => {
-		console.info("stopping ipfs");
-		ipfs.stop();
-		process.exit();
-	});
-
-	const context: Context = { ipfs, publicKey, privateKey };
-
-	setTimeout(() => backupFiles(context), 10 * 1000);
-}
-
-function getFileHash(filePath: string, type = "sha1"): Promise<string> {
-	return new Promise((res, rej) => {
-		const hash = crypto.createHash(type);
-		hash.setEncoding("hex");
-		fs.createReadStream(filePath).pipe(hash);
-		hash.on("finish", () => {
-			res(hash.read());
-		});
-	});
-}
-
-async function backupFiles({ ipfs, publicKey, privateKey }: Context) {
+async function backupFiles() {
+	const ipfs = await getIpfs();
 	const fileBackups = await fetchFileBackups();
 	let newFileBackups = Array.from(fileBackups);
 
@@ -79,8 +38,8 @@ async function backupFiles({ ipfs, publicKey, privateKey }: Context) {
 				});
 				const encrypted: unknown = await encrypt({
 					message,
-					encryptionKeys: publicKey,
-					signingKeys: privateKey,
+					encryptionKeys: await getPublicKey(),
+					signingKeys: await getPrivateKey(),
 					armor: false,
 				});
 
@@ -99,7 +58,22 @@ async function backupFiles({ ipfs, publicKey, privateKey }: Context) {
 
 	await updateFileBackups(newFileBackups);
 
-	setTimeout(() => backupFiles({ ipfs, publicKey, privateKey }), 10 * 1000);
+	setTimeout(() => backupFiles(), 10 * 1000);
 }
 
+async function main() {
+	await checkVersion();
+
+	// start ipfs client up
+	await getIpfs();
+
+	// start sync process
+	setTimeout(() => backupFiles(), 10 * 1000);
+}
 main();
+
+process.on("SIGINT", () => {
+	console.info("stopping ipfs");
+	stop();
+	process.exit();
+});
