@@ -1,13 +1,15 @@
 import { CID } from "ipfs-core";
 import path from "path";
 import fs from "fs";
-import { createMessage, encrypt } from "openpgp";
+import { createMessage, encrypt, sign } from "openpgp";
 import { fetchFileBackups, updateFileBackups } from "./private-api";
 import { photoFolderPath } from "./const";
-import { checkVersion } from "./api";
+// import { checkVersion } from "./api";
 import { getIpfs, stop } from "./ipfs";
 import { getPrivateKey, getPublicKey } from "./keys";
 import { getFileHash } from "./files";
+// import { closeAll, getLog } from "./db";
+import { syncDir } from "./sync";
 
 async function backupFiles() {
 	const ipfs = await getIpfs();
@@ -62,18 +64,42 @@ async function backupFiles() {
 }
 
 async function main() {
-	await checkVersion();
+	// await checkVersion();
 
 	// start ipfs client up
-	await getIpfs();
+	const ipfs = await getIpfs();
+	// const log = await getLog();
+	// console.log(log.address.toString());
+
+	// log.events.on('replicated', (address: string) => console.log(address))
+
+	// setInterval(() => {
+	// 	log.add(`Random number: ${Math.floor(Math.random()*1000)}`)
+	// }, 1000)
+
+	// const email = await (await (await getPublicKey()).getPrimaryUser()).user.userID?.email;
+	// if(email){
+	// 	await ipfs.pubsub.subscribe(email, (msg) => {
+	// 		console.log(msg.data.toString());
+	// 	})
+	// 	console.log(`subscribed to ${email}`);
+
+	// 	setInterval(async () => {
+	// 		const message = await createMessage({text: `random number ${Math.random()}`});
+	// 		const signed = await sign({message, signingKeys: await getPrivateKey()})
+	// 		await ipfs.pubsub.publish(`${email}/out`, Buffer.from(signed, 'utf-8'));
+	// 	}, 5000);
+	// }
 
 	// start sync process
-	setTimeout(() => backupFiles(), 10 * 1000);
+	// setTimeout(() => backupFiles(), 10 * 1000);
+	syncDir(path.resolve(photoFolderPath), "/files");
 }
 main();
 
-process.on("SIGINT", () => {
+process.on("SIGINT", async () => {
 	console.info("stopping ipfs");
-	stop();
+	// await closeAll();
+	await stop();
 	process.exit();
 });
