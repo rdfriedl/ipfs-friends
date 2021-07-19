@@ -1,34 +1,12 @@
 import path from "path";
 import fs from "fs";
-import { getIpfs, readFile as readIpfsFile } from "./ipfs";
+import { getIpfs } from "./ipfs";
 import { getFileHash } from "./files";
 import { createMessage, encrypt } from "openpgp";
 import { getPrivateKey, getPublicKey } from "./keys";
 import { MFSEntry } from "ipfs-core-types/src/files";
+import { readFolderMetadata, writeFolderMetadata } from "./device-state";
 
-const pfs = fs.promises;
-
-export type FileBackup = {
-	filename: string;
-	fileHash: string;
-};
-export type FolderBackup = {
-	name: string;
-	hash: string;
-};
-export type ipfsFolderMetadata = {
-	files: FileBackup[];
-	folders: FolderBackup[];
-};
-
-async function readAsyncIterable(iterable: AsyncIterable<Uint8Array>) {
-	const decoder = new TextDecoder("utf-8");
-	let content = "";
-	for await (const chunk of iterable) {
-		content += decoder.decode(chunk, { stream: true });
-	}
-	return content;
-}
 async function ipfsFilesList(ipfsPath: string) {
 	const ipfs = await getIpfs();
 	const reader = ipfs.files.ls(ipfsPath);
@@ -39,51 +17,18 @@ async function ipfsFilesList(ipfsPath: string) {
 	return contents;
 }
 
-async function getIpfsFolderMetadata(ipfsPath: string) {
-	const ipfs = await getIpfs();
-	const metadataPath = path.join(ipfsPath, "metadata.json");
-	const blank: ipfsFolderMetadata = {
-		files: [],
-		folders: [],
-	};
-
-	let content;
-	try {
-		content = await readAsyncIterable(ipfs.files.read(metadataPath));
-	} catch (e) {
-		return blank;
-	}
-
-	// try to parse
-	try {
-		return JSON.parse(content) as ipfsFolderMetadata;
-	} catch (e) {
-		console.log(`Failed to parse metadata.json at ${metadataPath}`);
-		console.log(e);
-		return blank;
-	}
-}
-async function updateIpfsFolderMetadata(ipfsPath: string, metadata: ipfsFolderMetadata) {
-	const ipfs = await getIpfs();
-	await ipfs.files.write(path.join(ipfsPath, "metadata.json"), JSON.stringify(metadata, null, 2), {
-		create: true,
-		parents: true,
-		truncate: true,
-	});
-}
-
 type BufferReadableStream = NodeJS.ReadableStream & {
 	[Symbol.asyncIterator](): AsyncIterableIterator<Buffer>;
 };
 
-const ignoreFiles = ["metadata.json"];
+const ignoreFiles = ["metadata"];
 export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 	console.log(`syncing ${localPath} to ${ipfsPath}`);
 
 	const ipfs = await getIpfs();
-	const metadata = await getIpfsFolderMetadata(ipfsPath);
+	const metadata = await readFolderMetadata(ipfsPath);
 
-	const localFolderContents = await pfs.readdir(localPath, { withFileTypes: true });
+	const localFolderContents = await fs.promises.readdir(localPath, { withFileTypes: true });
 	const ipfsFolderContents = await ipfsFilesList(ipfsPath);
 
 	const localFiles = localFolderContents.filter((e) => e.isFile()).filter((f) => !ignoreFiles.includes(f.name));
@@ -110,7 +55,7 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 		foldersTouched.push(localFolder.name);
 	}
 	for (const ipfsFolder of ipfsFolders) {
-		if(!foldersTouched.includes(ipfsFolder.name)){
+		if (!foldersTouched.includes(ipfsFolder.name)) {
 			await ipfs.files.rm(path.join(ipfsPath, ipfsFolder.name));
 		}
 	}
@@ -154,14 +99,14 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 		filesTouched.push(localFile.name);
 	}
 	for (const ipfsFile of ipfsFiles) {
-		if(!filesTouched.includes(ipfsFile.name)){
+		if (!filesTouched.includes(ipfsFile.name)) {
 			await ipfs.files.rm(path.join(ipfsPath, ipfsFile.name));
 		}
 	}
 
-	await updateIpfsFolderMetadata(ipfsPath, metadata);
+	await writeFolderMetadata(ipfsPath, metadata);
 
-	for(const folder of metadata.folders){
+	for (const folder of metadata.folders) {
 		await syncLocalFolder(path.join(localPath, folder.name), path.join(ipfsPath, folder.name));
 	}
 

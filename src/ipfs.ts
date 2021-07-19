@@ -3,6 +3,7 @@ import { IPFS } from "ipfs-core-types";
 import { create as createLocal } from "ipfs-core";
 import { create as createRemote } from "ipfs-http-client";
 import { ipfsApiUrl, ipfsMode, ipfsRepoPath } from "./const";
+import { addShutdownListener } from "./exit";
 
 const ipfsPath = path.isAbsolute(ipfsRepoPath) ? ipfsRepoPath : path.resolve(process.cwd(), ipfsRepoPath);
 let ipfsClient: IPFS;
@@ -33,7 +34,7 @@ export async function getIpfs() {
 	return ipfsClient;
 }
 
-export async function readFile(ipfsPath: string) {
+export async function readTextFile(ipfsPath: string) {
 	const ipfs = await getIpfs();
 	const read = ipfs.files.read(ipfsPath);
 	let file = "";
@@ -42,7 +43,7 @@ export async function readFile(ipfsPath: string) {
 	}
 	return file;
 }
-export async function writeFile(ipfsPath: string, content: Parameters<IPFS["files"]["write"]>[1]) {
+export async function writeTextFile(ipfsPath: string, content: Parameters<IPFS["files"]["write"]>[1]) {
 	const ipfs = await getIpfs();
 	await ipfs.files.write(ipfsPath, content);
 }
@@ -52,3 +53,9 @@ export function stop() {
 		ipfsClient.stop();
 	}
 }
+
+addShutdownListener(async () => {
+	console.info("stopping ipfs");
+	await stop();
+	process.exit();
+});
