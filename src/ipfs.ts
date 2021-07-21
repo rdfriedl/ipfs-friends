@@ -34,6 +34,17 @@ export async function getIpfs() {
 	return ipfsClient;
 }
 
+export async function exists(ipfsPath: string) {
+	const ipfs = await getIpfs();
+
+	try {
+		await ipfs.files.stat(ipfsPath);
+		return true;
+	} catch (e) {
+		return false;
+	}
+}
+
 export async function readTextFile(ipfsPath: string) {
 	const ipfs = await getIpfs();
 	const read = ipfs.files.read(ipfsPath);

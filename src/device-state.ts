@@ -1,6 +1,6 @@
-import path from 'path';
+import path from "path";
 import { asyncIterableToString } from "./helpers/async";
-import { getIpfs } from "./ipfs";
+import { exists, getIpfs } from "./ipfs";
 import { decryptText, encryptText } from "./keys";
 
 export async function readLocalEncryptedFile(ipfsPath: string) {
@@ -28,10 +28,12 @@ export async function writeLocalEncryptedJsonFile(ipfsPath: string, content: Rec
 	await writeLocalEncryptedFile(ipfsPath, JSON.stringify(content));
 }
 
-export async function ensureSetup(){
+export async function ensureSetup() {
 	const ipfs = await getIpfs();
 
-	await ipfs.files.mkdir('/files');
+	if (!(await exists("/files"))) {
+		await ipfs.files.mkdir("/files");
+	}
 }
 
 type DeviceInfo = {
