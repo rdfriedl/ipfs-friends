@@ -6,6 +6,7 @@ import { createMessage, encrypt } from "openpgp";
 import { getPrivateKey, getPublicKey } from "./keys";
 import { MFSEntry } from "ipfs-core-types/src/files";
 import { readFolderMetadata, writeFolderMetadata } from "./device-state";
+import { getHashOfString } from "./helpers/hash";
 
 async function ipfsFilesList(ipfsPath: string) {
 	const ipfs = await getIpfs();
@@ -40,8 +41,9 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 
 	// sync folders
 	for (const localFolder of localFolders) {
+		const hash = getHashOfString(localFolder.name);
 		const folderLocalPath = path.join(localPath, localFolder.name);
-		const folderIpfsPath = path.join(ipfsPath, localFolder.name);
+		const folderIpfsPath = path.join(ipfsPath, hash);
 		const meta = metadata.folders.find((f) => f.name === localFolder.name);
 
 		if (!meta) {
@@ -49,14 +51,15 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 
 			metadata.folders.push({
 				name: localFolder.name,
-				hash: "not-implemented",
+				hash,
 			});
 		}
-		foldersTouched.push(localFolder.name);
+		foldersTouched.push(hash);
 	}
 	for (const ipfsFolder of ipfsFolders) {
-		if (!foldersTouched.includes(ipfsFolder.name)) {
-			await ipfs.files.rm(path.join(ipfsPath, ipfsFolder.name));
+		const originalFolderNameHash = ipfsFolder.name;
+		if (!foldersTouched.includes(originalFolderNameHash)) {
+			await ipfs.files.rm(path.join(ipfsPath, originalFolderNameHash), {recursive: true});
 		}
 	}
 
@@ -64,10 +67,10 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 	while (localFiles.length > 0) {
 		const localFile = localFiles.shift() as fs.Dirent;
 		const fileLocalPath = path.join(localPath, localFile.name);
-		const fileIpfsPath = path.join(ipfsPath, localFile.name);
+		const hash = await getFileHash(fileLocalPath);
+		const fileIpfsPath = path.join(ipfsPath, hash);
 		const meta = metadata.files.find((f) => f.filename === localFile.name);
 
-		const hash = await getFileHash(fileLocalPath);
 		if (!meta || meta.fileHash !== hash) {
 			const message = await createMessage({
 				filename: localFile.name,
@@ -86,7 +89,7 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 			});
 
 			if (meta) {
-				meta.fileHash = localFile.name;
+				meta.filename = localFile.name;
 				meta.fileHash = hash;
 			} else {
 				metadata.files.push({
@@ -96,18 +99,19 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 			}
 		}
 
-		filesTouched.push(localFile.name);
+		filesTouched.push(hash);
 	}
 	for (const ipfsFile of ipfsFiles) {
-		if (!filesTouched.includes(ipfsFile.name)) {
-			await ipfs.files.rm(path.join(ipfsPath, ipfsFile.name));
+		const originalFilenameHash = ipfsFile.name;
+		if (!filesTouched.includes(originalFilenameHash)) {
+			await ipfs.files.rm(path.join(ipfsPath, originalFilenameHash));
 		}
 	}
 
 	await writeFolderMetadata(ipfsPath, metadata);
 
 	for (const folder of metadata.folders) {
-		await syncLocalFolder(path.join(localPath, folder.name), path.join(ipfsPath, folder.name));
+		await syncLocalFolder(path.join(localPath, folder.name), path.join(ipfsPath, folder.hash));
 	}
 
 	return metadata;
