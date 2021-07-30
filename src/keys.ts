@@ -1,5 +1,5 @@
 import pfs from "fs/promises";
-import { createMessage, decrypt, encrypt, PrivateKey, PublicKey, readKey, readPrivateKey } from "openpgp";
+import { createMessage, decrypt, encrypt, PrivateKey, PublicKey, readKey, readMessage, readPrivateKey } from "openpgp";
 import { privateKeyPath, publicKeyPath } from "./const";
 
 let privateKey: PrivateKey;
@@ -28,13 +28,13 @@ export async function encryptText(text: string) {
 	const privateKey = await getPrivateKey();
 	const publicKey = await getPublicKey();
 	const message = await createMessage({ text });
-	return await encrypt({ message, encryptionKeys: [publicKey], signingKeys: [privateKey], armor: true });
+	return await encrypt({ message, encryptionKeys: publicKey, signingKeys: privateKey, armor: true });
 }
 export async function decryptText(text: string, expectSigned = true) {
 	const privateKey = await getPrivateKey();
 	const publicKey = await getPublicKey();
-	const message = await createMessage({ text });
-	return await decrypt({ message, decryptionKeys: [privateKey], verificationKeys: [publicKey], expectSigned });
+	const message = await readMessage({ armoredMessage: text });
+	return await decrypt({ message, decryptionKeys: privateKey, verificationKeys: publicKey, expectSigned });
 }
 
 export async function getPrivaryPublicUser() {
