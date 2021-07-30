@@ -17,11 +17,13 @@
 		"ipfs-core": "^0.8.0",
 		"ipfs-core-types": "^0.5.2",
 		"ipfs-http-client": "^50.1.2",
+		"mime-types": "^2.1.32",
 		"node-fetch": "^2.6.1",
 		"openpgp": "^5.0.0-3",
 		"semver": "^7.3.5"
 	},
 	"devDependencies": {
+		"@types/mime-types": "^2.1.0",
 		"@types/node-fetch": "^2.5.11",
 		"@types/semver": "^7.3.7",
 		"nodemon": "^2.0.9",

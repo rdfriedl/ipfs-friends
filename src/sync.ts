@@ -1,5 +1,7 @@
 import path from "path";
 import fs from "fs";
+import mime from 'mime-types';
+
 import { getIpfs } from "./ipfs";
 import { getFileHash } from "./files";
 import { createMessage, encrypt } from "openpgp";
@@ -88,13 +90,20 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 				truncate: true,
 			});
 
+			const ipfsHash = (await ipfs.files.stat(fileIpfsPath)).cid.toString();
+			const mimeType = mime.lookup(localFile.name) || null;
+
 			if (meta) {
 				meta.filename = localFile.name;
 				meta.fileHash = hash;
+				meta.mimeType = mimeType;
+				meta.ipfsHash = ipfsHash;
 			} else {
 				metadata.files.push({
 					filename: localFile.name,
 					fileHash: hash,
+					mimeType,
+					ipfsHash
 				});
 			}
 		}
