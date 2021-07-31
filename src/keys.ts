@@ -28,7 +28,7 @@ export async function encryptText(text: string) {
 	const privateKey = await getPrivateKey();
 	const publicKey = await getPublicKey();
 	const message = await createMessage({ text });
-	return await encrypt({ message, encryptionKeys: publicKey, signingKeys: privateKey, armor: true });
+	return await encrypt({ message, encryptionKeys: publicKey, signingKeys: privateKey, format: 'armored' });
 }
 export async function decryptText(text: string, expectSigned = true) {
 	const privateKey = await getPrivateKey();

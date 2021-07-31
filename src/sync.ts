@@ -83,7 +83,7 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 				message,
 				encryptionKeys: await getPublicKey(),
 				signingKeys: await getPrivateKey(),
-				armor: false,
+				format: 'binary',
 			});
 
 			await ipfs.files.write(fileIpfsPath, encrypted as BufferReadableStream, {

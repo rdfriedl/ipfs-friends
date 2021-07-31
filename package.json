@@ -14,21 +14,21 @@
 	"dependencies": {
 		"cids": "^1.1.7",
 		"dotenv": "^10.0.0",
-		"ipfs-core": "^0.8.0",
-		"ipfs-core-types": "^0.5.2",
-		"ipfs-http-client": "^50.1.2",
+		"ipfs-core": "^0.9.1",
+		"ipfs-core-types": "^0.6.1",
+		"ipfs-http-client": "^51.0.1",
 		"mime-types": "^2.1.32",
 		"node-fetch": "^2.6.1",
-		"openpgp": "^5.0.0-3",
+		"openpgp": "^5.0.0-5",
 		"semver": "^7.3.5"
 	},
 	"devDependencies": {
 		"@types/mime-types": "^2.1.0",
-		"@types/node-fetch": "^2.5.11",
-		"@types/semver": "^7.3.7",
-		"nodemon": "^2.0.9",
+		"@types/node-fetch": "^2.5.12",
+		"@types/semver": "^7.3.8",
+		"nodemon": "^2.0.12",
 		"prettier": "^2.3.2",
-		"ts-node": "^10.0.0",
+		"ts-node": "^10.1.0",
 		"typescript": "^4.3.5"
 	}
 }

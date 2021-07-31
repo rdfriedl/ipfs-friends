@@ -10,9 +10,14 @@ async function main() {
 }
 
 async function sync() {
-	await syncLocalFolder(photoFolderPath, "/files");
-	await updateInfo();
-	await updateIpns();
+	try {
+		await syncLocalFolder(photoFolderPath, "/files");
+		await updateInfo();
+		await updateIpns();
+	}
+	catch(e){
+		console.log(e);
+	}
 
 	console.log("waiting one minutes before next sync");
 	setTimeout(sync, 60 * 1000);
