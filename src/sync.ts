@@ -1,13 +1,13 @@
 import path from "path";
 import fs from "fs";
-import mime from 'mime-types';
+import mime from "mime-types";
 
 import { getIpfs } from "./ipfs";
 import { getFileHash } from "./files";
 import { createMessage, encrypt } from "openpgp";
 import { getPrivateKey, getPublicKey } from "./keys";
 import { MFSEntry } from "ipfs-core-types/src/files";
-import { readFolderMetadata, writeFolderMetadata } from "./device-state";
+import { FileBackup, FolderBackup, readFolderMetadata, writeFolderMetadata } from "./device-state";
 import { getHashOfString } from "./helpers/hash";
 
 async function ipfsFilesList(ipfsPath: string) {
@@ -33,47 +33,48 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 
 	const localFolderContents = await fs.promises.readdir(localPath, { withFileTypes: true });
 	const ipfsFolderContents = await ipfsFilesList(ipfsPath);
-
-	const localFiles = localFolderContents.filter((e) => e.isFile()).filter((f) => !ignoreFiles.includes(f.name));
-	const ipfsFiles = ipfsFolderContents.filter((e) => e.type === "file").filter((f) => !ignoreFiles.includes(f.name));
-	const filesTouched: string[] = [];
 	const localFolders = localFolderContents.filter((e) => e.isDirectory());
 	const ipfsFolders = ipfsFolderContents.filter((e) => e.type === "directory");
-	const foldersTouched: string[] = [];
 
 	// sync folders
+	const newFolders: FolderBackup[] = [];
 	for (const localFolder of localFolders) {
 		const hash = getHashOfString(localFolder.name);
 		const folderLocalPath = path.join(localPath, localFolder.name);
 		const folderIpfsPath = path.join(ipfsPath, hash);
-		const meta = metadata.folders.find((f) => f.name === localFolder.name);
 
-		if (!meta) {
+		if (!ipfsFolders.find((f) => f.name === hash)) {
 			await ipfs.files.mkdir(folderIpfsPath, { parents: true });
+		}
 
-			metadata.folders.push({
-				name: localFolder.name,
-				hash,
-			});
-		}
-		foldersTouched.push(hash);
+		newFolders.push({
+			name: localFolder.name,
+			hash,
+		});
 	}
-	for (const ipfsFolder of ipfsFolders) {
-		const originalFolderNameHash = ipfsFolder.name;
-		if (!foldersTouched.includes(originalFolderNameHash)) {
-			await ipfs.files.rm(path.join(ipfsPath, originalFolderNameHash), {recursive: true});
+	const oldFolders = Array.from(metadata.folders);
+	for (const folder of oldFolders) {
+		if (!newFolders.find((f) => f.name === folder.name) && ipfsFolders.find(f => f.name === folder.hash)) {
+			await ipfs.files.rm(path.join(ipfsPath, folder.hash), { recursive: true });
 		}
 	}
+
+	metadata.folders = newFolders;
+
+	const localFiles = localFolderContents.filter((e) => e.isFile()).filter((f) => !ignoreFiles.includes(f.name));
+	const ipfsFiles = ipfsFolderContents.filter((e) => e.type === "file").filter((f) => !ignoreFiles.includes(f.name));
 
 	// sync files
+	const newFiles: FileBackup[] = [];
 	while (localFiles.length > 0) {
 		const localFile = localFiles.shift() as fs.Dirent;
 		const fileLocalPath = path.join(localPath, localFile.name);
 		const hash = await getFileHash(fileLocalPath);
 		const fileIpfsPath = path.join(ipfsPath, hash);
 		const meta = metadata.files.find((f) => f.filename === localFile.name);
+		const ipfsFile = ipfsFiles.find((f) => f.name === hash);
 
-		if (!meta || meta.fileHash !== hash) {
+		if (!meta || meta.fileHash !== hash || !ipfsFile) {
 			const message = await createMessage({
 				filename: localFile.name,
 				binary: fs.createReadStream(fileLocalPath),
@@ -89,33 +90,27 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 				create: true,
 				truncate: true,
 			});
-
-			const ipfsHash = (await ipfs.files.stat(fileIpfsPath)).cid.toString();
-			const mimeType = mime.lookup(localFile.name) || null;
-
-			if (meta) {
-				meta.filename = localFile.name;
-				meta.fileHash = hash;
-				meta.mimeType = mimeType;
-				meta.ipfsHash = ipfsHash;
-			} else {
-				metadata.files.push({
-					filename: localFile.name,
-					fileHash: hash,
-					mimeType,
-					ipfsHash
-				});
-			}
 		}
 
-		filesTouched.push(hash);
+		const ipfsHash = (await ipfs.files.stat(fileIpfsPath)).cid.toString();
+		const mimeType = mime.lookup(localFile.name) || null;
+
+		newFiles.push({
+			filename: localFile.name,
+			fileHash: hash,
+			mimeType,
+			ipfsHash,
+		});
 	}
-	for (const ipfsFile of ipfsFiles) {
-		const originalFilenameHash = ipfsFile.name;
-		if (!filesTouched.includes(originalFilenameHash)) {
-			await ipfs.files.rm(path.join(ipfsPath, originalFilenameHash));
+	// remove deleted files
+	const oldFiles = Array.from(metadata.files);
+	for (const file of oldFiles) {
+		if (!newFiles.find((f) => f.filename !== file.filename) && ipfsFiles.find(f => f.name === file.fileHash)) {
+			await ipfs.files.rm(path.join(ipfsPath, file.fileHash));
 		}
 	}
+
+	metadata.files = newFiles;
 
 	await writeFolderMetadata(ipfsPath, metadata);
 

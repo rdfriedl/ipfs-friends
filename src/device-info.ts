@@ -10,8 +10,6 @@ export async function updateInfo() {
 			name: deviceName,
 		})
 	);
-
-	await updateIpns();
 }
 
 export async function updateIpns() {
