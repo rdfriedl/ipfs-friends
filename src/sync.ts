@@ -69,43 +69,60 @@ export async function syncLocalFolder(localPath: string, ipfsPath: string) {
 	while (localFiles.length > 0) {
 		const localFile = localFiles.shift() as fs.Dirent;
 		const fileLocalPath = path.join(localPath, localFile.name);
-		const hash = await getFileHash(fileLocalPath);
-		const fileIpfsPath = path.join(ipfsPath, hash);
-		const meta = metadata.files.find((f) => f.filename === localFile.name);
-		const ipfsFile = ipfsFiles.find((f) => f.name === hash);
+		const filenameHash = getHashOfString(localFile.name);
+		const stats = await fs.promises.stat(fileLocalPath);
+		const fileIpfsPath = path.join(ipfsPath, filenameHash);
+		const oldFileBackup = metadata.files.find((f) => f.filenameHash === filenameHash);
+		const ipfsFile = ipfsFiles.find((f) => f.name === filenameHash);
 
-		if (!meta || meta.fileHash !== hash || !ipfsFile) {
-			const message = await createMessage({
-				filename: localFile.name,
-				binary: fs.createReadStream(fileLocalPath),
-			});
-			const encrypted = await encrypt({
-				message,
-				encryptionKeys: await getPublicKey(),
-				signingKeys: await getPrivateKey(),
-				format: 'binary',
-			});
+		const mimeType = mime.lookup(localFile.name) || null;
+		const fileBackup: FileBackup = {
+			filename: localFile.name,
+			filenameHash,
+			fileHash: 'unset',
+			mimeType,
+			ipfsHash: 'unset',
+			mtime: stats.mtime.toISOString()
+		};
 
-			await ipfs.files.write(fileIpfsPath, encrypted as BufferReadableStream, {
-				create: true,
-				truncate: true,
-			});
+		const mtimeChanged = stats.mtime.toISOString() !== oldFileBackup?.mtime;
+		if(mtimeChanged || !ipfsFile){
+			const hash = await getFileHash(fileLocalPath);
+			const hashChanged = hash !== oldFileBackup?.fileHash;
+
+			if(hashChanged){
+				console.log(`${localFile.name} changed (${oldFileBackup?.fileHash} -> ${hash})`);
+			}
+
+			fileBackup.fileHash = hash;
+
+			if (hashChanged || !ipfsFile) {
+				const message = await createMessage({
+					filename: localFile.name,
+					binary: fs.createReadStream(fileLocalPath),
+				});
+				const encrypted = await encrypt({
+					message,
+					encryptionKeys: await getPublicKey(),
+					signingKeys: await getPrivateKey(),
+					format: 'binary',
+				});
+
+				await ipfs.files.write(fileIpfsPath, encrypted as BufferReadableStream, {
+					create: true,
+					truncate: true,
+				});
+			}
 		}
 
-		const ipfsHash = (await ipfs.files.stat(fileIpfsPath)).cid.toString();
-		const mimeType = mime.lookup(localFile.name) || null;
+		fileBackup.ipfsHash = (await ipfs.files.stat(fileIpfsPath)).cid.toString();
 
-		newFiles.push({
-			filename: localFile.name,
-			fileHash: hash,
-			mimeType,
-			ipfsHash,
-		});
+		newFiles.push(fileBackup);
 	}
 	// remove deleted files
 	const oldFiles = Array.from(metadata.files);
 	for (const file of oldFiles) {
-		if (!newFiles.find((f) => f.filename !== file.filename) && ipfsFiles.find(f => f.name === file.fileHash)) {
+		if (!newFiles.find((f) => f.filenameHash !== file.filenameHash) && ipfsFiles.find(f => f.name === file.filenameHash)) {
 			await ipfs.files.rm(path.join(ipfsPath, file.fileHash));
 		}
 	}

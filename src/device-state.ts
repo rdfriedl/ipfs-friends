@@ -49,9 +49,11 @@ export function writeDeviceInfo(info: DeviceInfo) {
 
 export type FileBackup = {
 	filename: string;
+	filenameHash: string;
 	fileHash: string;
 	mimeType: string | null;
 	ipfsHash: string;
+	mtime: string;
 };
 export type FolderBackup = {
 	name: string;
